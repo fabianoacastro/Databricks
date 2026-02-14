@@ -1,0 +1,42 @@
+name: Generate Changelog
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  build:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog entry
+        id: changelog
+        run: |
+          echo "### PR #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}" >> temp_changelog.md
+          echo "- Autor: ${{ github.event.pull_request.user.login }}" >> temp_changelog.md
+          echo "- Data: $(date '+%Y-%m-%d')" >> temp_changelog.md
+          echo "" >> temp_changelog.md
+
+      - name: Append to CHANGELOG.md
+        run: |
+          touch CHANGELOG.md
+          cat temp_changelog.md CHANGELOG.md > temp_combined.md
+          mv temp_combined.md CHANGELOG.md
+          rm temp_changelog.md
+
+      - name: Commit changes
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add CHANGELOG.md
+          git commit -m "Atualizando CHANGELOG para PR #${{ github.event.pull_request.number }}" || echo "Nenhuma alteração para commitar"
+
+      - name: Push changes
+        run: |
+          git push
