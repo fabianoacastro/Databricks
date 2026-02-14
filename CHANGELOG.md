@@ -1,3 +1,7 @@
+### PR #7 - Atualização automática do CHANGELOG – PR #6
+- Autor: github-actions[bot]
+- Data: 2026-02-14
+
 ### PR #6 - Atualização automática do CHANGELOG – PR #5
 - Autor: github-actions[bot]
 - Data: 2026-02-14
