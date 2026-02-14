@@ -1,5 +1,5 @@
-### PR #4 - Testepr
-- Autor: fabianoacastro
+### PR #6 - Atualização automática do CHANGELOG – PR #5
+- Autor: github-actions[bot]
 - Data: 2026-02-14
 
 ### PR #5 - Atualização automática do CHANGELOG – PR #3
