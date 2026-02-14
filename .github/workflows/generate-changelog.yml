@@ -1,0 +1,38 @@
+name: Generate Changelog
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  build:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog entry
+        run: |
+          echo "### PR #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}" >> temp_changelog.md
+          echo "- Autor: ${{ github.event.pull_request.user.login }}" >> temp_changelog.md
+          echo "- Data: $(date '+%Y-%m-%d')" >> temp_changelog.md
+          echo "" >> temp_changelog.md
+
+      - name: Update CHANGELOG.md
+        run: |
+          touch CHANGELOG.md
+          cat temp_changelog.md CHANGELOG.md > temp_combined.md
+          mv temp_combined.md CHANGELOG.md
+          rm temp_changelog.md
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: update-changelog-pr-${{ github.event.pull_request.number }}
+          title: "Atualização automática do CHANGELOG – PR #${{ github.event.pull_request.number }}"
+          body: "Este PR foi gerado automaticamente para atualizar o CHANGELOG."
