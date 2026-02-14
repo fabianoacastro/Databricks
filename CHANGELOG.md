@@ -1,3 +1,7 @@
+### PR #8 - Atualização automática do CHANGELOG – PR #4
+- Autor: github-actions[bot]
+- Data: 2026-02-14
+
 ### PR #4 - Testepr
 - Autor: fabianoacastro
 - Data: 2026-02-14
