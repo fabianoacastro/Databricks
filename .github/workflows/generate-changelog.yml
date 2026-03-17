@@ -6,7 +6,11 @@ on:
 
 jobs:
   update-changelog:
-    if: github.event.pull_request.merged == true
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.user.login != 'github-actions[bot]' &&
+      github.event.pull_request.user.type != 'Bot' &&
+      !startsWith(github.event.pull_request.head.ref, 'update-changelog-pr-')
     runs-on: ubuntu-latest
     permissions:
       contents: write
