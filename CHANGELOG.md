@@ -1,3 +1,23 @@
+### PR #13 – 📋 Atualização automática do CHANGELOG – PR #12
+
+- **Autor:** github-actions[bot]
+- **Data:** 2026-03-17
+- **Labels:** _sem labels_
+- **Branch:** `update-changelog-pr-12` → `main`
+
+**Descrição:**
+Este PR foi gerado automaticamente pelo Changelog Agent para registrar as alterações do PR #12.
+
+**PR de origem:** #12 – feat: Add automated Code Review Agent and enhance Changelog Agent
+**Autor:** Copilot
+
+**Arquivos alterados:**
+```
+CHANGELOG.md
+```
+
+---
+
 ### PR #12 – feat: Add automated Code Review Agent and enhance Changelog Agent
 
 - **Autor:** Copilot
