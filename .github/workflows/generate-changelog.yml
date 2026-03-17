@@ -2,37 +2,86 @@ name: Generate Changelog
 
 on:
   pull_request:
-    types: [closed]
+    types: [opened, reopened]
 
 jobs:
-  build:
-    if: github.event.pull_request.merged == true
+  update-changelog:
+    if: >
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'github-actions[bot]' &&
+      github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Get changed files
+        id: changed-files
+        run: |
+          git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD > pr_changed_files.txt
+          echo "Files changed:"
+          cat pr_changed_files.txt
+
+      - name: Get PR labels
+        id: pr-labels
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+            const labels = pr.data.labels.map(l => '`' + l.name + '`').join(', ') || '_sem labels_';
+            core.setOutput('labels', labels);
 
       - name: Generate changelog entry
         run: |
-          echo "### PR #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}" >> temp_changelog.md
-          echo "- Autor: ${{ github.event.pull_request.user.login }}" >> temp_changelog.md
-          echo "- Data: $(date '+%Y-%m-%d')" >> temp_changelog.md
-          echo "" >> temp_changelog.md
+          {
+            echo "### PR #${{ github.event.pull_request.number }} – ${{ github.event.pull_request.title }}"
+            echo ""
+            echo "- **Autor:** ${{ github.event.pull_request.user.login }}"
+            echo "- **Data:** $(date '+%Y-%m-%d')"
+            echo "- **Labels:** ${{ steps.pr-labels.outputs.labels }}"
+            echo "- **Branch:** \`${{ github.event.pull_request.head.ref }}\` → \`${{ github.event.pull_request.base.ref }}\`"
+            if [ -n "${{ github.event.pull_request.body }}" ]; then
+              echo ""
+              echo "**Descrição:**"
+              echo "${{ github.event.pull_request.body }}"
+            fi
+            echo ""
+            echo "**Arquivos alterados:**"
+            echo '```'
+            cat pr_changed_files.txt
+            echo '```'
+            echo ""
+            echo "---"
+            echo ""
+          } > temp_changelog.md
 
       - name: Update CHANGELOG.md
         run: |
           touch CHANGELOG.md
           cat temp_changelog.md CHANGELOG.md > temp_combined.md
           mv temp_combined.md CHANGELOG.md
-          rm temp_changelog.md
+          rm temp_changelog.md pr_changed_files.txt
 
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: update-changelog-pr-${{ github.event.pull_request.number }}
-          title: "Atualização automática do CHANGELOG – PR #${{ github.event.pull_request.number }}"
-          body: "Este PR foi gerado automaticamente para atualizar o CHANGELOG."
+      - name: Commit and push CHANGELOG update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if git diff --staged --quiet; then
+            echo "Nenhuma alteração no CHANGELOG.md"
+          else
+            git commit -m "docs: atualiza CHANGELOG para PR #${{ github.event.pull_request.number }}"
+            git push origin ${{ github.event.pull_request.head.ref }}
+          fi
