@@ -1,0 +1,131 @@
+name: Code Review Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install review dependencies
+        run: |
+          pip install flake8 nbformat nbqa
+
+      - name: Get changed files
+        id: changed-files
+        run: |
+          git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
+          echo "Changed files:"
+          cat changed_files.txt
+
+      - name: Lint Python files
+        id: lint-python
+        continue-on-error: true
+        run: |
+          PYTHON_FILES=$(grep '\.py$' changed_files.txt || true)
+          if [ -n "$PYTHON_FILES" ]; then
+            echo "$PYTHON_FILES" | xargs flake8 --max-line-length=120 --format='%(path)s:%(row)d:%(col)d: %(code)s %(text)s' 2>&1 | tee lint_results.txt
+          else
+            echo "Nenhum arquivo .py alterado." | tee lint_results.txt
+          fi
+
+      - name: Lint Jupyter Notebooks
+        id: lint-notebooks
+        continue-on-error: true
+        run: |
+          NOTEBOOK_FILES=$(grep '\.ipynb$' changed_files.txt || true)
+          if [ -n "$NOTEBOOK_FILES" ]; then
+            echo "$NOTEBOOK_FILES" | xargs nbqa flake8 --max-line-length=120 2>&1 | tee notebook_lint_results.txt
+          else
+            echo "Nenhum notebook .ipynb alterado." | tee notebook_lint_results.txt
+          fi
+
+      - name: Validate Jupyter Notebooks format
+        id: validate-notebooks
+        continue-on-error: true
+        run: |
+          NOTEBOOK_FILES=$(grep '\.ipynb$' changed_files.txt || true)
+          VALIDATION_RESULTS=""
+          if [ -n "$NOTEBOOK_FILES" ]; then
+            while IFS= read -r nb; do
+              python -c "
+          import nbformat, sys
+          try:
+              nb = nbformat.read('$nb', as_version=4)
+              nbformat.validate(nb)
+              print('✅ $nb: formato válido')
+          except nbformat.ValidationError as e:
+              print('❌ $nb: erro de validação – ' + str(e))
+              sys.exit(1)
+          except Exception as e:
+              print('⚠️  $nb: ' + str(e))
+          " 2>&1
+            done <<< "$NOTEBOOK_FILES"
+          else
+            echo "Nenhum notebook para validar."
+          fi
+
+      - name: Build review comment
+        id: build-comment
+        run: |
+          {
+            echo "## 🤖 Revisão Automática de Código"
+            echo ""
+            echo "### 📁 Arquivos alterados"
+            echo '```'
+            cat changed_files.txt
+            echo '```'
+            echo ""
+
+            echo "### 🐍 Lint Python"
+            if [ -f lint_results.txt ] && [ -s lint_results.txt ]; then
+              echo '```'
+              cat lint_results.txt
+              echo '```'
+            else
+              echo "✅ Nenhum problema encontrado nos arquivos Python."
+            fi
+            echo ""
+
+            echo "### 📓 Lint Notebooks"
+            if [ -f notebook_lint_results.txt ] && [ -s notebook_lint_results.txt ]; then
+              echo '```'
+              cat notebook_lint_results.txt
+              echo '```'
+            else
+              echo "✅ Nenhum problema encontrado nos notebooks."
+            fi
+            echo ""
+
+            echo "---"
+            echo "_Revisão gerada automaticamente pelo Code Review Agent_"
+          } > review_comment.md
+
+      - name: Post review comment on PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('review_comment.md', 'utf8');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
