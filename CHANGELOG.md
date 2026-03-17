@@ -1,3 +1,17 @@
+### PR #16 – teste commit
+
+- **Autor:** fabianoacastro
+- **Data:** 2026-03-17
+- **Labels:** _sem labels_
+- **Branch:** `testepr` → `main`
+
+**Arquivos alterados:**
+```
+NotebookFabiano.ipynb
+```
+
+---
+
 ### PR #13 – 📋 Atualização automática do CHANGELOG – PR #12
 
 - **Autor:** github-actions[bot]
