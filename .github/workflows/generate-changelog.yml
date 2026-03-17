@@ -29,8 +29,8 @@ jobs:
           echo "Files changed:"
           cat pr_changed_files.txt
 
-      - name: Get PR labels
-        id: pr-labels
+      - name: Get PR metadata
+        id: pr-meta
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -40,32 +40,114 @@ jobs:
               repo: context.repo.repo,
               pull_number: context.payload.pull_request.number
             });
+
+            const labelNames = pr.data.labels.map(l => l.name.toLowerCase());
+            const title = pr.data.title || '';
+            const body = pr.data.body || '';
+
+            // Detect category from Conventional Commits prefix or labels
+            let category = 'Changed';
+            const conventionalMatch = title.match(/^(feat|fix|docs|chore|refactor|perf|test|style|ci|build|revert)(\(.+\))?!?:/i);
+            if (conventionalMatch) {
+              const prefix = conventionalMatch[1].toLowerCase();
+              if (prefix === 'feat') category = 'Added';
+              else if (prefix === 'fix') category = 'Fixed';
+              else if (prefix === 'docs') category = 'Documentation';
+              else if (prefix === 'perf') category = 'Performance';
+              else if (prefix === 'refactor') category = 'Changed';
+              else if (prefix === 'revert') category = 'Removed';
+              else category = 'Changed';
+            } else if (labelNames.some(l => ['bug', 'fix', 'hotfix', 'bugfix'].includes(l))) {
+              category = 'Fixed';
+            } else if (labelNames.some(l => ['feature', 'feat', 'enhancement', 'new'].includes(l))) {
+              category = 'Added';
+            } else if (labelNames.some(l => ['security'].includes(l))) {
+              category = 'Security';
+            } else if (labelNames.some(l => ['deprecated', 'deprecation'].includes(l))) {
+              category = 'Deprecated';
+            } else if (labelNames.some(l => ['removal', 'removed', 'breaking'].includes(l))) {
+              category = 'Removed';
+            } else if (labelNames.some(l => ['docs', 'documentation'].includes(l))) {
+              category = 'Documentation';
+            }
+
+            // Clean title: strip conventional commit prefix if present
+            const cleanTitle = title.replace(/^(feat|fix|docs|chore|refactor|perf|test|style|ci|build|revert)(\(.+\))?!?:\s*/i, '');
+
             const labels = pr.data.labels.map(l => '`' + l.name + '`').join(', ') || '_sem labels_';
+
+            core.setOutput('category', category);
+            core.setOutput('clean_title', cleanTitle);
             core.setOutput('labels', labels);
+            core.setOutput('body', body.trim());
 
       - name: Generate changelog entry
+        env:
+          PR_DATE: ${{ env.PR_DATE }}
         run: |
-          {
-            echo "### PR #${{ github.event.pull_request.number }} – ${{ github.event.pull_request.title }}"
-            echo ""
-            echo "- **Autor:** ${{ github.event.pull_request.user.login }}"
-            echo "- **Data:** $(date '+%Y-%m-%d')"
-            echo "- **Labels:** ${{ steps.pr-labels.outputs.labels }}"
-            echo "- **Branch:** \`${{ github.event.pull_request.head.ref }}\` → \`${{ github.event.pull_request.base.ref }}\`"
-            if [ -n "${{ github.event.pull_request.body }}" ]; then
-              echo ""
-              echo "**Descrição:**"
-              echo "${{ github.event.pull_request.body }}"
-            fi
-            echo ""
-            echo "**Arquivos alterados:**"
-            echo '```'
-            cat pr_changed_files.txt
-            echo '```'
-            echo ""
-            echo "---"
-            echo ""
-          } > temp_changelog.md
+          PR_DATE=$(date '+%Y-%m-%d')
+          export PR_DATE
+
+          python3 - <<'PYEOF'
+          import os, textwrap
+          from collections import Counter
+
+          pr_number   = "${{ github.event.pull_request.number }}"
+          pr_author   = "${{ github.event.pull_request.user.login }}"
+          pr_date     = os.environ["PR_DATE"]
+          base_ref    = "${{ github.event.pull_request.base.ref }}"
+          head_ref    = "${{ github.event.pull_request.head.ref }}"
+          repo        = "${{ github.repository }}"
+          category    = "${{ steps.pr-meta.outputs.category }}"
+          clean_title = "${{ steps.pr-meta.outputs.clean_title }}"
+          labels      = "${{ steps.pr-meta.outputs.labels }}"
+          pr_body     = """${{ steps.pr-meta.outputs.body }}""".strip()
+
+          # Read changed files and build a concise summary
+          with open("pr_changed_files.txt") as f:
+              changed = [l.strip() for l in f if l.strip()]
+
+          # Summarise changed files: group by extension
+          ext_counter = Counter()
+          for path in changed:
+              ext = os.path.splitext(path)[1] or "(sem extensão)"
+              ext_counter[ext] += 1
+
+          file_summary_parts = []
+          for ext, count in sorted(ext_counter.items()):
+              label = f"{count} arquivo{'s' if count > 1 else ''} `{ext}`"
+              file_summary_parts.append(label)
+          file_summary = ", ".join(file_summary_parts) if file_summary_parts else "nenhum arquivo listado"
+
+          # Build changelog block
+          pr_url = f"https://github.com/{repo}/pull/{pr_number}"
+          lines = []
+          lines.append(f"## [{pr_date}] – PR #{pr_number}: {clean_title}")
+          lines.append("")
+          lines.append(f"### {category}")
+          lines.append("")
+          lines.append(f"- **{clean_title}** ([#{pr_number}]({pr_url})) — @{pr_author}")
+
+          if pr_body:
+              # Wrap each line of the description into blockquote lines
+              for raw_line in pr_body.splitlines():
+                  wrapped_lines = textwrap.wrap(raw_line, width=100) if raw_line.strip() else [""]
+                  for wl in wrapped_lines:
+                      lines.append(f"  > {wl}")
+
+          lines.append("")
+          lines.append(f"**Arquivos modificados:** {file_summary}")
+          lines.append(f"**Labels:** {labels}")
+          lines.append(f"**Branch:** `{head_ref}` → `{base_ref}`")
+          lines.append("")
+          lines.append("---")
+          lines.append("")
+
+          with open("temp_changelog.md", "w") as f:
+              f.write("\n".join(lines))
+
+          print("Changelog entry gerado com sucesso.")
+          PYEOF
 
       - name: Update CHANGELOG.md
         run: |
